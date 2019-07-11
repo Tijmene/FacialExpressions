@@ -12,12 +12,14 @@ from tqdm import tqdm
 import random
 
 
+num_features = 64
+num_labels = 8
+input_width = 128
+input_height = 128
+
+
 def create_model():
     model = Sequential()
-    num_features = 64
-    num_labels = 8
-    input_width = 100
-    input_height = 100
 
     model.add(Conv2D(num_features, kernel_size=(3, 3), activation='relu', input_shape=(input_width, input_height, 1),
                      data_format='channels_last', kernel_regularizer=l2(0.01)))
@@ -102,41 +104,45 @@ def encode_labels(labels, one_hot_encoding, emotions_list):
 
 
 if __name__ == "__main__":
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.4)
+    new_model_bool = False
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.25)
     sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
 
-    labelDict, emotions_list = create_labels()
+    label_dict, emotions_list = create_labels()
     one_hot_encoding = create_one_hot_encoding(emotions_list)
-    encoded_labels = encode_labels(labelDict, one_hot_encoding, emotions_list)
+    encoded_labels = encode_labels(label_dict, one_hot_encoding, emotions_list)
 
     model_path = "model"
     model_name = "facial_model.h5"
     path = os.path.join(model_path, model_name)
-    if model_name not in os.listdir(model_path):
+    if model_name not in os.listdir(model_path)or new_model_bool:
         model = create_model()
         model.save(path)
     else:
         model = load_model(path)
 
-    order = list(range(20))
+    amount_of_dict = len(os.listdir('./image_data_dict/')) - 3
+    order = list(range(amount_of_dict))
     random.shuffle(order)
-    for run in range(5):
-        for batch in tqdm(order):
-            with open('./image_data_dict/images_' + str(batch) + '.dictionary', 'rb') as image_dict_file:
+    epoch = 10
+
+    for run in tqdm(range(epoch)):
+        for batch in order:
+            with open('./image_data_dict/images_train_' + str(batch) + '.dictionary', 'rb') as image_dict_file:
                 train_image_dict = pickle.load(image_dict_file)
                 amount_images = len(train_image_dict.keys())
-                x_train = np.empty(shape=(amount_images, 100, 100, 1), dtype=int)
+                x_train = np.empty(shape=(amount_images, input_width, input_height, 1), dtype=int)
                 y_train = np.empty(shape=(amount_images, 8), dtype=int)
                 index = 0
                 for image_name, image_data in train_image_dict.items():
-                    if image_name in encoded_labels.keys() and image_data.shape[0] == 100:
+                    if image_name in encoded_labels.keys() and image_data.shape[0] == input_width:
                         x_train[index] = image_data
                         y_train[index] = (encoded_labels[image_name])
                         index += 1
 
-                model.fit(x_train, y_train, batch_size=16, epochs=3, validation_split=.1, verbose=2)
+                model.fit(x_train, y_train, batch_size=32, epochs=1, validation_split=.1, verbose=2)
                 model.save(model_name)
                 del train_image_dict, x_train, y_train
                 image_dict_file.close()
                 gc.collect()
-    print("Done with run " + str(run))
+        print("Done with run " + str(run))
